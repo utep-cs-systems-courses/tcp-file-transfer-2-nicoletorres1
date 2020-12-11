@@ -1,38 +1,65 @@
-import socket
-import os
+#!/usr/bin/env python3
+
 import sys
+sys.path.append("../lib")
+import socket, params, os, re
+from framedSock import framedSend, framedReceive
 
 
-def main():
-    os.fork()
-    s = socket.socket()
-    host = socket.gethostname()
-    port = 50001
+switchesVarDefaults = (
+	(('-l', '--listenPort') ,'listenPort', 50001),
+	(('-d', '--debug'), "debug", False), # boolean (set if present)
+	(('-?', '--usage'), "usage", False), # boolean (set if present)
+	)
 
-    s.bind((host, port))
-    print("Server should have binded")
-    fileName = open('TestRec.txt', 'wb')
-    s.listen(5)
+progname = "echoserver"
+paramMap = params.parseParams(switchesVarDefaults)
 
-    while True:
-        client, addr = s.accept()
-        print("Connection from: " + str(addr))
-        print("Receiving...")
-        data = client.recv(1024)
+debug, PORT = paramMap["debug"], paramMap["listenPort"]
+HOST = "127.0.0.1"
 
-        while True:
-            if not data:
-                break
-            fileName.write(data)
-            data = client.recv(1024)
-        fileName.close()
-        print("Done")
-        client.shutdown(socket.SHUT_RD)
-        client.close()
-        os.wait()
+if paramMap['usage']:
+    params.usage()
 
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+	s.bind((HOST, PORT))
+	s.listen(5)		#listen for up to 5 incoming conns
+	print("listening on:", (HOST, PORT))
+	
+	while True:
+		conn, addr = s.accept()
+		
+		if not os.fork():
+			print("Connection from: ", addr)
 
-if __name__ == '__main__':
-    main()
+			payload = ""
+			try:
+				fileName, fileContents = framedReceive(conn, debug)
+			except Exception as e:
+				print("File transfer failed")
+				print(e)
+				sys.exit(0)
 
+			if debug: print("recieved: ", payload)
 
+			if payload is None:
+				print("File contents were empty, exiting...")
+				sys.exit(0)
+
+			fileName = fileName.decode()
+
+			try:
+				if not os.path.isfile("./received/" + fileName):
+					currpath = os.path.dirname(os.path.realpath(__file__))
+					file = open(currpath+"/received/" + fileName, 'w+b')
+					file.write(fileContents)
+					file.close()
+					print("File ", fileName, " recieved!")
+					sys.exit(0)
+				else:
+					print("File is already on the server")
+					sys.exit(0)
+			except FileNotFoundError as e:
+				print("File was not found")
+				print(e)
+				sys.exit(0)

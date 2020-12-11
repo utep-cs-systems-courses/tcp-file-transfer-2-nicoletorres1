@@ -1,44 +1,57 @@
+#! /usr/bin/env python3
 
-'''
-1. work with and without the proxy
-2. support multiple clients simultaneously using fork()
-3. gracefully deal with scenarios such as:
-4. zero length files
-5. user attempts to transmit a file which does not exist
-6. file already exists on the server
-7. the client or server unexpectedly disconnect
+import sys
+sys.path.append("../lib")
+import socket, params, os, re
+from framedSock import framedSend, framedReceive
 
-//copy from framed echo FileClient, framed socket, Fileserver
+switchesVarDefaults = (
+	(('-s', '--server'), 'server', "127.0.0.1:50001"),
+	(('-d', '--debug'), "debug", False), # boolean (set if present)
+	(('-?', '--usage'), "usage", False), # boolean (set if present)
+	)
 
-'''
+def getFile():
+	invalid = True
+	while invalid:
+		try:
+			filename = input(str("Please enter the filename to send:"))
+			file = open(filename,'rb')
+			return file, filename
+			invalid = False
+		except FileNotFoundError:
+			print("I couldn't find your file! Please keep trying.")
+	
 
-import socket
+paramMap = params.parseParams(switchesVarDefaults)
+server, usage, debug  = paramMap["server"], paramMap["usage"], paramMap["debug"]
 
+if usage:
+	params.usage()
 
-def main():
-    s = socket.socket()
-    host = socket.gethostname()
-    port = 50001
+try:
+	print(server)
+	HOST, PORT = re.split(":", server)
+	PORT = int(PORT)
+except:
+	print("Can't parse server:port from '%s'" % server)
+	sys.exit(1)
 
-    s.connect((host, port))
-
-    # this is the file transfer
-    file = open('TestSend.txt', 'rb')
-    print("Sending file...")
-
-    sending = file.read(1024)
-    while (sending):
-        print("Sending file...")
-        s.send(sending)
-        sending = file.read(1024)
-    file.close()
-    print("Done sending")
-    s.shutdown(socket.SHUT_WR)
-    print(s.recv(1024))
-
-    s.close()
-
-
-if __name__ == '__main__':
-    main()
-
+	
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+	if s is None:
+		print('could not open socket')
+		sys.exit(1)
+	
+	try:
+		s.connect((HOST, PORT))
+		file, filename = getFile();
+		data = file.read()
+		if len(data) == 0:
+			print("Empty file.")
+			sys.exit(1)
+		print("sending fileName")
+		framedSend(s, filename, data, debug)
+		file.close()
+	except ConnectionRefusedError:
+		print("Could not connect to server!")
